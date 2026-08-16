@@ -1,0 +1,11 @@
+{
+  "Nickname": "RequiemAutoNPCPatcher3T",
+  "Visibility": "Visible",
+  "OneLineDescription": "Rebalances modded NPCs onto the Requiem + 3BFTweaks ladders. Must run BEFORE the Reqtificator.",
+  "LongDescription": "Rebalances the NPCs of chosen mods onto Requiem + 3BFTweaks.\n\nHumanoids are put on 3BFTweaks' bandit rank grid (FZR_Bandit_Template_*, 9 archetypes x 6 ranks) and take that rank's level, pools, skill line, full perk loadout, tempering ability, class and combat style. Casters and creatures are matched against the nearest comparable actor in the donor plugins instead - same race for a creature - so no creature stats are hardcoded and a 3BFTweaks update changes the output with no code change.\n\nRun order is Synthesis -> Reqtificator -> play, with this patcher's ESP above 'Requiem for the Indifferent.esp'. Every lookup resolves the load-order winner with the generated plugins removed, and nothing the ActorAssignmentRules_*.conf files assign is ever written, so the next Reqtificator run is not double-stamped.\n\nNever touches Factions, DefaultOutfit or Items. Nothing is patched until you list plugins under 'Mods to patch'.",
+  "PreferredAutoVersioning": "Default",
+  "RequiredMods": [],
+  "TargetedReleases": [
+    "SkyrimSE"
+  ]
+}

@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Mutagen 0.54.4 / Synthesis 0.36.6 (the versions this profile pins) ship net9.0 and net10.0
+         only; net8.0 does not resolve. -->
+    <TargetFramework>net9.0</TargetFramework>
+    <TargetPlatformIdentifier>Windows</TargetPlatformIdentifier>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Mutagen.Bethesda" Version="0.54.4" />
+    <PackageReference Include="Mutagen.Bethesda.Skyrim" Version="0.54.4" />
+    <PackageReference Include="Mutagen.Bethesda.Synthesis" Version="0.36.6" />
+  </ItemGroup>
+
+</Project>
