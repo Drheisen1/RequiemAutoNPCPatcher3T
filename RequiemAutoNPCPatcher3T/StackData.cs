@@ -26,6 +26,11 @@ public static class StackData
     public static readonly FormKey ActorTypeCreature = Sky(0x013795);
     public static readonly FormKey ArmorShield = Sky(0x0965B2);
 
+    /// <summary>The two state-trait gates from npcs.md §3.1. Requiem's own build config keys the ghost
+    /// and spirit trait perks off these, race-independently.</summary>
+    public static readonly FormKey KeywordGhost = Sky(0x0D205E);
+    public static readonly FormKey KeywordSpirit = Sky(0x10EAD7);
+
     public static readonly FormKey WeapTypeSword = Sky(0x01E711);
     public static readonly FormKey WeapTypeWarAxe = Sky(0x01E712);
     public static readonly FormKey WeapTypeDagger = Sky(0x01E713);

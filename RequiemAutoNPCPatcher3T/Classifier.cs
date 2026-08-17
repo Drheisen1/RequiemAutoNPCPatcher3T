@@ -4,7 +4,7 @@ using Mutagen.Bethesda.Skyrim;
 
 namespace RequiemAutoNPCPatcher3T;
 
-public enum ActorKind { Humanoid, Caster, Creature }
+public enum ActorKind { Humanoid, Caster, Creature, Ghost }
 
 public sealed record Classification(
     ActorKind Kind,
@@ -51,6 +51,9 @@ public sealed class Classifier
 
         var (combatant, reason) = JudgeCombatant(cls, stats, npc, perks, effects, gear);
 
+        if (IsGhost(npc))
+            return new Classification(ActorKind.Ghost, combatant, reason, fallback, false, "ghost / spirit", false);
+
         if (isChild)
             return new Classification(ActorKind.Humanoid, false, "child race", fallback, false, "child", true);
 
@@ -77,6 +80,12 @@ public sealed class Classifier
         // Strong signal 1 — the actor carries a weapon or a shield.
         if (gear.Weapons.Count > 0) return (true, "carries a weapon");
         if (gear.HasShield) return (true, "carries a shield");
+
+        // ...and its inverse. Gear is strong evidence in BOTH directions (§11.3 lists DefaultOutfit
+        // among the strong fields), so a weaponless actor in clothing is a civilian even when a cloned
+        // combat class and combat style say otherwise.
+        if (gear.IsUnarmedCivilian)
+            return (false, "no weapon and a clothing-only outfit (combat class/style read as clone residue)");
 
         // Strong signal 2 — a class whose skill weights are combat skills.
         if (cls is not null && ClassCombatWeight(cls) > 0) return (true, $"combat class {cls.EditorID}");
@@ -117,6 +126,30 @@ public sealed class Classifier
         foreach (var skill in StackData.CombatSkills)
             if (cls.SkillWeights.TryGetValue(skill, out var w)) total += w;
         return total;
+    }
+
+    // ------------------------------------------------------------------ ghost
+
+    /// <summary>
+    /// npcs.md §3.1 makes ghost and spirit STATE traits — keyword-gated and race-independent, so a ghost
+    /// can be any race and the race tells you nothing.
+    ///
+    /// <c>IsGhost</c> is a weak, runtime-mutable flag, and §11.3 forbids reading it as evidence of
+    /// whether an actor FIGHTS. That is not what it is used for here: combatant-or-not is still decided
+    /// from the strong evidence, and this only chooses which family of comparable to measure against.
+    /// A ghost's numbers come from ghosts.
+    /// </summary>
+    public bool IsGhost(INpcGetter npc)
+    {
+        if (npc.Configuration.Flags.HasFlag(NpcConfiguration.Flag.IsGhost)) return true;
+
+        var keywords = _view.Owner(npc, NpcConfiguration.TemplateFlag.Keywords)?.Keywords;
+        if (keywords is not null && (Has(keywords, StackData.KeywordGhost) || Has(keywords, StackData.KeywordSpirit)))
+            return true;
+
+        var race = _view.Race(npc);
+        return race?.Keywords is not null
+               && (Has(race.Keywords, StackData.KeywordGhost) || Has(race.Keywords, StackData.KeywordSpirit));
     }
 
     // ------------------------------------------------------------------ caster
@@ -237,7 +270,23 @@ public sealed class Classifier
 
     // ------------------------------------------------------------------ gear
 
-    public sealed record Gear(List<IWeaponGetter> Weapons, bool HasShield);
+    public sealed record Gear(List<IWeaponGetter> Weapons, bool HasShield, bool HasArmor, bool HasClothing)
+    {
+        /// <summary>
+        /// Nothing to fight with and nothing to fight in — a weaponless actor dressed only in clothing.
+        ///
+        /// This is the one case where a combat <c>Class</c> and <c>CombatStyle</c> are overruled, and the
+        /// reason is the same one <c>armor.md</c> §1A gives for armour: a mod author builds an NPC by
+        /// cloning a bandit and swapping the outfit, so the class and combat style are RESIDUE while the
+        /// outfit is the deliberate field. <c>BaboTemplateFarmerM01</c> is exactly that — named "Farmer",
+        /// wearing <c>FarmClothesOutfit01</c>, carrying no weapon, and still holding
+        /// <c>EncClassBanditMelee</c> and <c>csHumanMeleeLvl1</c> from whatever it was cloned from.
+        ///
+        /// It is deliberately narrow. Any weapon, any shield, any real armour, or an empty outfit and the
+        /// actor is a combatant again, because §11.3's asymmetry still holds everywhere else.
+        /// </summary>
+        public bool IsUnarmedCivilian => Weapons.Count == 0 && !HasShield && !HasArmor && HasClothing;
+    }
 
     /// <summary>
     /// Reads what the actor carries. Gear is never WRITTEN by this patcher — mods keep their visual
@@ -247,6 +296,8 @@ public sealed class Classifier
     {
         var weapons = new List<IWeaponGetter>();
         var shield = false;
+        var armor = false;
+        var clothing = false;
 
         var visited = new HashSet<FormKey>();
 
@@ -261,8 +312,11 @@ public sealed class Classifier
                 case IWeaponGetter weapon:
                     weapons.Add(weapon);
                     break;
-                case IArmorGetter armor:
-                    if (armor.Keywords is not null && Has(armor.Keywords, StackData.ArmorShield)) shield = true;
+                case IArmorGetter worn:
+                    if (worn.Keywords is not null && Has(worn.Keywords, StackData.ArmorShield)) shield = true;
+                    // armor.md §1A: BodyTemplate.ArmorType is the truth, over any keyword.
+                    if (worn.BodyTemplate?.ArmorType == ArmorType.Clothing) clothing = true;
+                    else if (worn.BodyTemplate is not null) armor = true;
                     break;
                 case ILeveledItemGetter leveled:
                     foreach (var entry in leveled.Entries ?? Enumerable.Empty<ILeveledItemEntryGetter>())
@@ -278,7 +332,7 @@ public sealed class Classifier
             foreach (var item in outfit.Items ?? Enumerable.Empty<IFormLinkGetter<IOutfitTargetGetter>>())
                 Consider(item.FormKey, 0);
 
-        return new Gear(weapons, shield);
+        return new Gear(weapons, shield, armor, clothing);
     }
 
     // ------------------------------------------------------------------ helpers

@@ -71,7 +71,10 @@ public class Program
         // ------------------------------------------------------------------ donor pool
         var winningNpcs = order.PriorityOrder.Npc().WinningOverrides().ToArray();
         var donors = new DonorIndex(winningNpcs, donorPlugins, cache, view, classifier);
-        Console.WriteLine($"Donor pool: {donors.ActorCount} actor(s) across {donors.RaceCount} race(s), of which {donors.CasterCount} caster(s).");
+        Console.WriteLine(
+            $"Donor pool: {donors.ActorCount} actor(s) across {donors.RaceCount} race(s) — " +
+            $"{donors.CasterCount} caster(s), {donors.GhostCount} ghost(s). " +
+            $"{donors.RejectedCount} unique/summonable actor(s) refused as comparables.");
 
         // Every NPC the target mods touch but do not define. Built once — asking the load order per
         // actor is O(actors x plugins) on a mod that adds a thousand of them.
@@ -94,6 +97,19 @@ public class Program
             if (!targets.Contains(npc.FormKey.ModKey) && !touchedByTarget.Contains(npc.FormKey)) continue;
             if (excludedNpcs.Contains(npc.FormKey)) continue;
             if (npc.EditorID is not null && StackData.IsTombstone(npc.EditorID)) continue;
+
+            // A clone of a vanilla or stack actor is settled before anything else is considered: the
+            // original is already balanced, so inheriting beats deriving.
+            if (Config.InheritFromStackTemplates
+                && npc.Configuration.TemplateFlags.HasFlag(NpcConfiguration.TemplateFlag.Traits)
+                && npc.Template.TryResolve(cache) is INpcGetter original
+                && !targets.Contains(original.FormKey.ModKey))
+            {
+                var clone = state.PatchMod.Npcs.GetOrAddAsOverride(npc);
+                if (!npcPatcher.ApplyCloneInheritance(npc, clone, original))
+                    state.PatchMod.Npcs.Remove(npc.FormKey);
+                continue;
+            }
 
             var cls = classifier.Classify(npc, Config.FallbackArchetype);
 
@@ -119,6 +135,20 @@ public class Program
                     var rank = Math.Clamp(NearestRank(view.IntendedLevel(npc)), rankFloor, rankCeiling);
                     var target = state.PatchMod.Npcs.GetOrAddAsOverride(npc);
                     if (!npcPatcher.ApplyBanditRank(npc, target, cls.Archetype, rank, cls))
+                        state.PatchMod.Npcs.Remove(npc.FormKey);
+                    break;
+                }
+
+                case ActorKind.Ghost when Config.PatchGhosts:
+                {
+                    var donor = donors.ForGhost(view.IntendedLevel(npc));
+                    if (donor is null)
+                    {
+                        log.NeedsDecision($"{Describe(npc)}: a ghost, but the donor plugins hold no ghost comparable.");
+                        break;
+                    }
+                    var target = state.PatchMod.Npcs.GetOrAddAsOverride(npc);
+                    if (!npcPatcher.ApplyDonor(npc, target, donor, cls, "nearest ghost by level"))
                         state.PatchMod.Npcs.Remove(npc.FormKey);
                     break;
                 }

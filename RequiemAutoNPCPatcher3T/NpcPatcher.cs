@@ -60,6 +60,40 @@ public sealed class NpcPatcher
         return true;
     }
 
+    // ------------------------------------------------------------------ clones of stack actors
+
+    /// <summary>
+    /// An actor that is a clone of a vanilla or stack NPC gets its stats and loadout by INHERITING them,
+    /// not by being re-derived.
+    ///
+    /// <c>BaboEventBrunwulf</c> templates vanilla <c>Brunwulf</c> and already inherits
+    /// <c>Traits, Stats, Inventory</c> — the author's intent could not be plainer. But <c>SpellList</c>
+    /// is missing, so the clone keeps its own perks and abilities while the original's are ignored. The
+    /// original is a record Requiem, 3BFTweaks and the Reqtificator have all already balanced; ticking
+    /// one flag hands the clone every one of those decisions and keeps handing it to them when the stack
+    /// updates. Deriving a fresh answer here would be strictly worse work.
+    ///
+    /// This is the skill's trap 14 read the right way round: the fix for a missing loadout is often to
+    /// tick a template flag, not to hand-author values.
+    /// </summary>
+    public bool ApplyCloneInheritance(INpcGetter source, Npc target, INpcGetter original)
+    {
+        const NpcConfiguration.TemplateFlag wanted =
+            NpcConfiguration.TemplateFlag.Stats | NpcConfiguration.TemplateFlag.SpellList;
+
+        var current = source.Configuration.TemplateFlags;
+        if (current.HasFlag(wanted)) return false; // already inheriting both
+
+        target.Configuration.TemplateFlags = current | wanted;
+
+        var added = new List<string>();
+        if (!current.HasFlag(NpcConfiguration.TemplateFlag.Stats)) added.Add("Stats");
+        if (!current.HasFlag(NpcConfiguration.TemplateFlag.SpellList)) added.Add("SpellList");
+
+        _log.Actor(source, $"clone of {Name(original)} — inherits {string.Join(" + ", added)} instead of being re-derived");
+        return true;
+    }
+
     // ------------------------------------------------------------------ children
 
     /// <summary>

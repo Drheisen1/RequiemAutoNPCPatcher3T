@@ -88,6 +88,21 @@ public class Settings
              "own dead bytes.")]
     public bool PatchCreatures { get; set; } = true;
 
+    [SettingName("Patch ghosts and spirits")]
+    [Tooltip("Ghost and spirit are race-independent STATE traits in this stack, so a ghost's comparable " +
+             "is another ghost rather than another actor of its race. Detected from the IsGhost flag, " +
+             "the Keyword_Ghost / Keyword_Spirit keywords, or a ghost race.")]
+    public bool PatchGhosts { get; set; } = true;
+
+    [SettingName("Let clones of vanilla NPCs inherit instead of being patched")]
+    [Tooltip("An actor that templates its Traits from an NPC outside the patched mods - a clone of a " +
+             "vanilla or Requiem actor, like BaboEventBrunwulf templating Brunwulf - gets 'Stats' and " +
+             "'Spell List' ticked in its template flags and nothing else written.\n\n" +
+             "The original is a record Requiem, 3BFTweaks and the Reqtificator have already balanced, so " +
+             "inheriting it is both less work and a better answer than re-deriving one - and it keeps " +
+             "tracking the stack when the stack changes.")]
+    public bool InheritFromStackTemplates { get; set; } = true;
+
     [SettingName("De-level children")]
     [Tooltip("A child gets a fixed level and NOTHING else - no pools, no skill line, no perks, no " +
              "abilities, no class, no combat style. Detected from the RACE's own Child flag, not from " +

@@ -19,10 +19,13 @@ public sealed class DonorIndex
     private readonly ActorView _view;
     private readonly Dictionary<FormKey, List<Donor>> _byRace = new();
     private readonly List<Donor> _casters = new();
+    private readonly List<Donor> _ghosts = new();
 
     public int ActorCount { get; private set; }
     public int RaceCount => _byRace.Count;
     public int CasterCount => _casters.Count;
+    public int GhostCount => _ghosts.Count;
+    public int RejectedCount { get; private set; }
 
     public DonorIndex(
         IEnumerable<INpcGetter> winningNpcs,
@@ -39,6 +42,22 @@ public sealed class DonorIndex
 
             // Requiem retires records by hollowing them out. spells.md §14.7: never use one as a comparable.
             if (StackData.IsTombstone(npc.EditorID)) continue;
+
+            // Two whole families are off-pattern by construction and must never be a generic comparable
+            // (the "don't copy an off-ladder value because it sits next door" rule):
+            //
+            //   Unique     — npcs.md §12.1 makes this the closest thing the stack has to a boss flag:
+            //                a hand-set stat line far off any ladder. dunHunterSabreCat is level 32 with
+            //                427 health where the ordinary EncSabreCatSnow is level 11 with 275, so
+            //                letting it into the pool turns any high-level modded cat into a boss.
+            //   Summonable — npcs.md §5.4: summon stats are per-record and arbitrary, with no curve at
+            //                all. REQ_Actor_Illusion_Dremora is level 46 with 40 health (§14.2).
+            var flags = npc.Configuration.Flags;
+            if (flags.HasFlag(NpcConfiguration.Flag.Unique) || flags.HasFlag(NpcConfiguration.Flag.Summonable))
+            {
+                RejectedCount++;
+                continue;
+            }
 
             // npcs.md §14.1: FoxRace is the stack's invisible marker/spawner race — a 1683-health
             // "fox", and also the placeholder the CK leaves on any actor whose Traits are templated.
@@ -63,8 +82,11 @@ public sealed class DonorIndex
             list.Add(donor);
             ActorCount++;
 
-            if (classifier.Classify(npc, BanditArchetype.SwordShield) is { Kind: ActorKind.Caster })
-                _casters.Add(donor);
+            switch (classifier.Classify(npc, BanditArchetype.SwordShield).Kind)
+            {
+                case ActorKind.Caster: _casters.Add(donor); break;
+                case ActorKind.Ghost: _ghosts.Add(donor); break;
+            }
         }
     }
 
@@ -90,6 +112,11 @@ public sealed class DonorIndex
 
     public Donor? ForCaster(int targetLevel) =>
         _casters.Count == 0 ? null : Nearest(_casters, targetLevel);
+
+    /// <summary>Ghost and spirit are race-independent state traits (npcs.md §3.1), so a ghost's
+    /// comparable is another ghost of any race rather than another Altmer.</summary>
+    public Donor? ForGhost(int targetLevel) =>
+        _ghosts.Count == 0 ? null : Nearest(_ghosts, targetLevel);
 
     private static Donor Nearest(List<Donor> list, int targetLevel) =>
         list.OrderBy(d => Math.Abs(d.Level - targetLevel))
