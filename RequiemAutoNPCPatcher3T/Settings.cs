@@ -96,11 +96,13 @@ public class Settings
 
     [SettingName("Let clones of vanilla NPCs inherit instead of being patched")]
     [Tooltip("An actor that templates its Traits from an NPC outside the patched mods - a clone of a " +
-             "vanilla or Requiem actor, like BaboEventBrunwulf templating Brunwulf - gets 'Stats' and " +
-             "'Spell List' ticked in its template flags and nothing else written.\n\n" +
-             "The original is a record Requiem, 3BFTweaks and the Reqtificator have already balanced, so " +
-             "inheriting it is both less work and a better answer than re-deriving one - and it keeps " +
-             "tracking the stack when the stack changes.")]
+             "vanilla or Requiem actor, like BaboEventBrunwulf templating Brunwulf - gets 'Use Stats' " +
+             "ticked, so its numbers come from the original that Requiem, 3BFTweaks and the Reqtificator " +
+             "have already balanced.\n\n" +
+             "'Use Spell List' is deliberately NOT ticked. That flag replaces the clone's perks and " +
+             "abilities rather than merging them, which would silently delete mod-defined perks the mod's " +
+             "own quests and events depend on. Instead the clone keeps its own loadout and the original's " +
+             "perks and abilities are merged in on top.")]
     public bool InheritFromStackTemplates { get; set; } = true;
 
     [SettingName("De-level children")]

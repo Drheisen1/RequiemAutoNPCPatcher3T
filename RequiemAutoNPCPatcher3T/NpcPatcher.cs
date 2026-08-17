@@ -78,19 +78,32 @@ public sealed class NpcPatcher
     /// </summary>
     public bool ApplyCloneInheritance(INpcGetter source, Npc target, INpcGetter original)
     {
-        const NpcConfiguration.TemplateFlag wanted =
-            NpcConfiguration.TemplateFlag.Stats | NpcConfiguration.TemplateFlag.SpellList;
-
         var current = source.Configuration.TemplateFlags;
-        if (current.HasFlag(wanted)) return false; // already inheriting both
+        var wrote = false;
 
-        target.Configuration.TemplateFlags = current | wanted;
+        // Stats — inherit. The original is already balanced by Requiem, 3BFTweaks and the Reqtificator,
+        // and inheriting keeps tracking them when the stack updates.
+        if (!current.HasFlag(NpcConfiguration.TemplateFlag.Stats))
+        {
+            target.Configuration.TemplateFlags = current | NpcConfiguration.TemplateFlag.Stats;
+            wrote = true;
+        }
 
-        var added = new List<string>();
-        if (!current.HasFlag(NpcConfiguration.TemplateFlag.Stats)) added.Add("Stats");
-        if (!current.HasFlag(NpcConfiguration.TemplateFlag.SpellList)) added.Add("SpellList");
+        // SpellList — NEVER ticked, and this is the important half.
+        //
+        // The template flag is all-or-nothing: ticking it does not merge the original's loadout into the
+        // clone's, it REPLACES it. `BaboEncWolfSnow` owns BaboDamageDiminishedForNPC,
+        // BaboDamageDiminishedForPlayer and BaboTearingClothesPerk — mod-defined perks its events depend
+        // on — and inheriting would delete all three at run time with nothing in the record to show it.
+        //
+        // So the clone keeps ownership of the block and gets the original's perks and abilities MERGED
+        // in instead: mod-defined entries survive, the stack's are added on top, and Requiem's tombstones
+        // (this actor carries REQ_NULL_ExtraDamage3) are dropped on the way through.
+        wrote |= CopyLoadout(source, target, original);
 
-        _log.Actor(source, $"clone of {Name(original)} — inherits {string.Join(" + ", added)} instead of being re-derived");
+        if (!wrote) return false;
+
+        _log.Actor(source, $"clone of {Name(original)} — inherits Stats; loadout merged, mod perks kept");
         return true;
     }
 
