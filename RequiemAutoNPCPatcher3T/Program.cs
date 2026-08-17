@@ -97,6 +97,15 @@ public class Program
 
             var cls = classifier.Classify(npc, Config.FallbackArchetype);
 
+            if (cls.IsChild)
+            {
+                if (!Config.DeLevelChildren) continue;
+                var child = state.PatchMod.Npcs.GetOrAddAsOverride(npc);
+                if (!npcPatcher.ApplyChildLevel(npc, child, Config.ChildLevel))
+                    state.PatchMod.Npcs.Remove(npc.FormKey);
+                continue;
+            }
+
             if (!cls.IsCombatant && !Config.PatchNonCombatants)
             {
                 log.Note($"{Describe(npc)}: left alone — {cls.CombatantReason}.");
@@ -130,27 +139,29 @@ public class Program
 
                 case ActorKind.Creature when Config.PatchCreatures:
                 {
-                    var raceLink = view.RaceLink(npc);
-                    if (raceLink is null || raceLink.IsNull)
+                    if (view.RaceKey(npc) is not { } raceKey)
                     {
-                        log.Error($"{Describe(npc)}: no resolvable race.");
+                        // Not an error. The actor's Traits come from a leveled list whose entries name no
+                        // usable race, so there is nothing to compare it against — and its own Race field
+                        // is the CK's FoxRace placeholder, which would be a lie to act on.
+                        log.Note($"{Describe(npc)}: race comes from a leveled list with no resolvable entries — left alone.");
                         break;
                     }
 
-                    var donorRace = ResolveDonorRace(raceLink.FormKey, donors);
+                    var donorRace = ResolveDonorRace(raceKey, donors, cache);
                     if (donorRace is null)
                     {
                         log.NeedsDecision(
-                            $"{Describe(npc)}: race {RaceName(raceLink.FormKey, cache)} has no comparable actor in the donor plugins.");
+                            $"{Describe(npc)}: race {RaceName(raceKey, cache)} has no comparable actor in the donor plugins, and the race names no ArmorRace to fall back on.");
                         break;
                     }
 
+                    var why = donorRace.Value == raceKey
+                        ? (view.RaceIsLeveled(npc) ? "race rolled from a leveled list, nearest by level" : "same race, nearest by level")
+                        : $"via {RaceName(donorRace.Value, cache)}, nearest by level";
+
                     var donor = donors.ForRace(donorRace.Value, view.IntendedLevel(npc));
                     if (donor is null) break;
-
-                    var why = donorRace.Value == raceLink.FormKey
-                        ? "same race, nearest by level"
-                        : $"race override -> {RaceName(donorRace.Value, cache)}, nearest by level";
 
                     var target = state.PatchMod.Npcs.GetOrAddAsOverride(npc);
                     if (!npcPatcher.ApplyDonor(npc, target, donor, cls, why))
@@ -165,22 +176,20 @@ public class Program
         {
             if (!targets.Contains(race.FormKey.ModKey)) continue;
 
-            var patched = false;
-            Race? target = null;
+            var target = state.PatchMod.Races.GetOrAddAsOverride(race);
+            var patched = racePatcher.StripGiantStomp(race, target);
 
-            var overrideEntry = Config.RaceDonorOverrides
-                .FirstOrDefault(o => o.TargetRace.FormKey == race.FormKey);
+            // A creature's armour rating, resistances, regeneration and damage all live on its RACE
+            // (npcs.md §5.2 pattern B, §5.5), so a mod's own creature race needs bringing onto the ladder
+            // or nothing else lands. Humanoid and child races are left alone: their actors are handled on
+            // the bandit grid, and copying a playable race's ability list onto one would be wrong.
+            var isHumanoid = race.Keywords?.Any(k => k.FormKey == StackData.ActorTypeNPC) == true;
+            var isChild = race.Flags.HasFlag(Race.Flag.Child);
 
-            if (overrideEntry is not null
-                && !overrideEntry.DonorRace.IsNull
-                && overrideEntry.DonorRace.TryResolve(cache, out var donorRace))
-            {
-                target = state.PatchMod.Races.GetOrAddAsOverride(race);
+            if (!isHumanoid && !isChild && ResolveDonorRaceRecord(race, cache) is { } donorRace)
                 patched |= racePatcher.Apply(race, target, donorRace);
-            }
-
-            target ??= state.PatchMod.Races.GetOrAddAsOverride(race);
-            patched |= racePatcher.StripGiantStomp(race, target);
+            else if (!isHumanoid && !isChild)
+                log.NeedsDecision($"race {race.EditorID ?? "<unnamed>"} ({race.FormKey}) names no ArmorRace and has no override — not patched.");
 
             if (!patched) state.PatchMod.Races.Remove(race.FormKey);
         }
@@ -202,15 +211,47 @@ public class Program
         return best;
     }
 
-    private static FormKey? ResolveDonorRace(FormKey race, DonorIndex donors)
+    /// <summary>
+    /// Which race's actors to take the balance from. A hand-written override wins; then the race's own
+    /// <c>ArmorRace</c>.
+    ///
+    /// <c>ArmorRace</c> is the field a mod author sets to say "this race wears what THAT race wears", and
+    /// it is the closest thing the format has to a declared parent — <c>BakaHorseRace</c> points at
+    /// <c>HorseRace</c>, <c>BakaGiantOrcRace</c> at <c>OrcRace</c>. Following it is reading an authored
+    /// answer, not guessing, which is why a custom race no longer needs a manual entry to be patched.
+    /// </summary>
+    private static FormKey? ResolveDonorRace(FormKey race, DonorIndex donors, ILinkCache cache)
     {
-        if (donors.HasRace(race)) return race;
-
         var mapped = Config.RaceDonorOverrides
             .FirstOrDefault(o => o.TargetRace.FormKey == race && !o.DonorRace.IsNull);
         if (mapped is not null && donors.HasRace(mapped.DonorRace.FormKey)) return mapped.DonorRace.FormKey;
 
+        if (donors.HasRace(race)) return race;
+
+        var seen = new HashSet<FormKey> { race };
+        var current = race;
+        for (var depth = 0; depth < 4; depth++)
+        {
+            if (!cache.TryResolve<IRaceGetter>(current, out var record)) return null;
+            if (record.ArmorRace.IsNull) return null;
+
+            var parent = record.ArmorRace.FormKey;
+            if (!seen.Add(parent)) return null;
+            if (donors.HasRace(parent)) return parent;
+            current = parent;
+        }
         return null;
+    }
+
+    /// <summary>The race a mod-defined RACE should copy its balance from: a hand-written override, else
+    /// its own <c>ArmorRace</c>.</summary>
+    private static IRaceGetter? ResolveDonorRaceRecord(IRaceGetter race, ILinkCache cache)
+    {
+        var mapped = Config.RaceDonorOverrides
+            .FirstOrDefault(o => o.TargetRace.FormKey == race.FormKey && !o.DonorRace.IsNull);
+        if (mapped is not null && mapped.DonorRace.TryResolve(cache) is { } overridden) return overridden;
+
+        return race.ArmorRace.IsNull ? null : race.ArmorRace.TryResolve(cache);
     }
 
     private static string RaceName(FormKey race, ILinkCache cache) =>

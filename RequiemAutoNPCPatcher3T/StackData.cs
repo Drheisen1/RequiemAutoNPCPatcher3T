@@ -36,9 +36,18 @@ public static class StackData
     public static readonly FormKey WeapTypeBattleaxe = Sky(0x06D932);
     public static readonly FormKey WeapTypeQuarterstaff = Req(0xADDF81);
 
-    /// <summary>FoxRace is used across the stack as an invisible marker/spawner race. npcs.md §14.1:
-    /// never take a FoxRace actor as a stat comparable.</summary>
+    /// <summary>FoxRace is used across the stack as an invisible marker/spawner race — a 1683-health
+    /// "fox" (npcs.md §14.1) — and is also what the CK leaves in the Race field of any actor whose
+    /// Traits are templated. Never a stat comparable.</summary>
     public static readonly FormKey FoxRace = Sky(0x109C7C);
+
+    /// <summary>The CK's other placeholder. It sits in the Race field of every one of the 54 bandit
+    /// templates, and on leftovers like `AADeleteWhenDoneTestJeremyBig`. Reading it as a real race makes
+    /// a skeever list resolve to "Default Race".</summary>
+    public static readonly FormKey DefaultRace = Sky(0x000019);
+
+    /// <summary>A race that names nothing about the actor — the CK's placeholders.</summary>
+    public static bool IsPlaceholderRace(FormKey race) => race == FoxRace || race == DefaultRace;
 
     public static readonly FormKey GiantRace = Sky(0x0131F9);
     public static readonly FormKey LurkerRace = new(Dragonborn, 0x014495);

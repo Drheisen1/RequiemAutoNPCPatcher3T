@@ -56,7 +56,37 @@ public sealed class NpcPatcher
 
         _log.Actor(source, $"{archetype} rank {rank:00} (level {level}) <- {template.EditorID} [{cls.ArchetypeReason}]");
         if (cls.ArchetypeIsGuess)
-            _log.Warn($"{Name(source)}: archetype guessed as {archetype} — {cls.ArchetypeReason}");
+            _log.Guess($"{Name(source)}: archetype inferred as {archetype} — {cls.ArchetypeReason}");
+        return true;
+    }
+
+    // ------------------------------------------------------------------ children
+
+    /// <summary>
+    /// A child gets a level and nothing else — no pools, no skill line, no perks, no abilities, no class,
+    /// no combat style.
+    ///
+    /// The only defect a child record actually has in this stack is a PC-level multiplier, which drags it
+    /// up with the player for no reason. Everything else about a child is deliberate, and the bandit grid
+    /// is meaningless on one: there is no rank of "child", and handing a child 18 perks and a
+    /// REQ_Class_Bandit_SwordShield is a straightforwardly wrong answer, not a conservative one.
+    /// </summary>
+    public bool ApplyChildLevel(INpcGetter source, Npc target, int level)
+    {
+        if (_view.IsInherited(source, NpcConfiguration.TemplateFlag.Stats))
+        {
+            _log.Skip($"{Name(source)}: child, Stats inherited from {Name(source.Template)} — level not writable here.");
+            return false;
+        }
+
+        if (source.Configuration.Level is INpcLevelGetter fixedLevel && fixedLevel.Level == level)
+            return false; // already de-levelled and already at the right level
+
+        target.Configuration.Level = new NpcLevel { Level = (short)level };
+        target.Configuration.CalcMinLevel = (short)level;
+        target.Configuration.CalcMaxLevel = (short)level;
+
+        _log.Actor(source, $"child — level {level} only, nothing else touched");
         return true;
     }
 
@@ -85,8 +115,11 @@ public sealed class NpcPatcher
             return false;
         }
 
-        var donorStats = _view.Stats(donor);
-        if (donorStats is null)
+        // The offsets live in Configuration and the pools in PlayerSkills, but they are ONE block — so
+        // both must come from the record that actually owns Stats, not from the donor's own dead bytes.
+        var donorOwner = _view.Owner(donor, NpcConfiguration.TemplateFlag.Stats);
+        var donorStats = donorOwner?.PlayerSkills;
+        if (donorOwner is null || donorStats is null)
         {
             _log.Error($"{Name(source)}: donor {Name(donor)} has no resolvable stat block.");
             return false;
@@ -119,16 +152,21 @@ public sealed class NpcPatcher
         foreach (var (skill, value) in donorStats.SkillValues)
             target.PlayerSkills.SkillValues[skill] = value;
 
-        // A skill OFFSET on top of a copied skill line double-counts the same competence.
         target.PlayerSkills.SkillOffsets.Clear();
-        foreach (var skill in donorStats.SkillValues.Keys)
-            target.PlayerSkills.SkillOffsets[skill] = 0;
+        foreach (var (skill, value) in donorStats.SkillOffsets)
+            target.PlayerSkills.SkillOffsets[skill] = value;
 
-        // npcs.md §13.2 item 9 — 3Tweaks never uses the three stat offsets on a new actor, and all 54
-        // bandit templates sit at 0. Leaving a mod's offsets in place double-counts the pools.
-        target.Configuration.HealthOffset = 0;
-        target.Configuration.MagickaOffset = 0;
-        target.Configuration.StaminaOffset = 0;
+        // The three stat offsets are part of the SAME block as the pools, so they come from the donor
+        // like everything else — they are NOT zeroed.
+        //
+        // 3Tweaks does use stat offsets, and blanket-zeroing them is wrong. The 54 bandit templates
+        // happen to sit at 0, so a humanoid still ends up at 0 — but by copying a comparable that reads
+        // 0, not by a rule that overrides one. A creature whose comparable carries a real offset keeps
+        // it. What must not survive is the MOD's offset sitting on top of the DONOR's pools, which is
+        // the double-count this replacement prevents.
+        target.Configuration.HealthOffset = donorOwner.Configuration.HealthOffset;
+        target.Configuration.MagickaOffset = donorOwner.Configuration.MagickaOffset;
+        target.Configuration.StaminaOffset = donorOwner.Configuration.StaminaOffset;
 
         return true;
     }

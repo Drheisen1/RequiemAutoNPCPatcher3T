@@ -13,6 +13,7 @@ public sealed class PatchLog
     private readonly List<string> _errors = new();
     private readonly List<string> _skips = new();
     private readonly List<string> _needsDecision = new();
+    private readonly List<string> _guesses = new();
 
     public int Patched { get; private set; }
     public int Untouched { get; private set; }
@@ -39,6 +40,17 @@ public sealed class PatchLog
 
     public void Warn(string message) => _warnings.Add(message);
 
+    /// <summary>
+    /// An archetype inferred from the skill line because the actor carries no weapon. Counted rather
+    /// than listed: on a dialogue or scene mod almost every actor is unarmed, so one line each buries
+    /// the handful of findings that actually need reading.
+    /// </summary>
+    public void Guess(string message)
+    {
+        _guesses.Add(message);
+        if (_verbose) Console.WriteLine($"  guess: {message}");
+    }
+
     public void Error(string message) => _errors.Add(message);
 
     /// <summary>An actor the patcher will not guess at. Always surfaced.</summary>
@@ -52,6 +64,11 @@ public sealed class PatchLog
         Section("Actors that need a decision", _needsDecision,
             "Each of these is on a race the donor plugins contain no comparable for. Add a 'Creature race " +
             "donor override' in the patcher settings pointing that race at a vanilla or stack race, then re-run.");
+
+        if (_guesses.Count > 0 && !_verbose)
+            Console.WriteLine(
+                $"\n{_guesses.Count} archetype(s) inferred from the skill line because the actor carries no weapon. " +
+                "Turn on 'Log every patched actor' to list them.");
 
         Section("Warnings", _warnings, null);
         Section("Errors", _errors, null);

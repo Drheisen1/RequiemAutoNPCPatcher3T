@@ -12,7 +12,8 @@ public sealed record Classification(
     string CombatantReason,
     BanditArchetype Archetype,
     bool ArchetypeIsGuess,
-    string ArchetypeReason);
+    string ArchetypeReason,
+    bool IsChild);
 
 /// <summary>
 /// npcs.md §11.3. Flags and AI dispositions are one Papyrus call from being cleared, so they are never
@@ -38,6 +39,10 @@ public sealed class Classifier
         var race = _view.Race(npc);
         var isHumanoid = race is not null && HasKeyword(race, StackData.ActorTypeNPC);
 
+        // The RACE's own Child flag, not a name guess. A child is never a combatant in this stack and
+        // never belongs on the bandit grid: it gets a level and nothing else.
+        var isChild = race is not null && race.Flags.HasFlag(Race.Flag.Child);
+
         var cls = _view.Class(npc);
         var stats = _view.Stats(npc);
         var perks = _view.Perks(npc);
@@ -46,14 +51,17 @@ public sealed class Classifier
 
         var (combatant, reason) = JudgeCombatant(cls, stats, npc, perks, effects, gear);
 
+        if (isChild)
+            return new Classification(ActorKind.Humanoid, false, "child race", fallback, false, "child", true);
+
         if (!isHumanoid)
-            return new Classification(ActorKind.Creature, combatant, reason, fallback, false, "creature");
+            return new Classification(ActorKind.Creature, combatant, reason, fallback, false, "creature", false);
 
         if (IsCaster(cls, stats, effects))
-            return new Classification(ActorKind.Caster, combatant, reason, fallback, false, "magic-dominant class / skill line");
+            return new Classification(ActorKind.Caster, combatant, reason, fallback, false, "magic-dominant class / skill line", false);
 
         var (archetype, guessed, why) = PickArchetype(gear, stats, cls, fallback);
-        return new Classification(ActorKind.Humanoid, combatant, reason, archetype, guessed, why);
+        return new Classification(ActorKind.Humanoid, combatant, reason, archetype, guessed, why, false);
     }
 
     // ------------------------------------------------------------------ combatant

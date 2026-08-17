@@ -41,10 +41,10 @@ public sealed class DonorIndex
             if (StackData.IsTombstone(npc.EditorID)) continue;
 
             // npcs.md §14.1: FoxRace is the stack's invisible marker/spawner race — a 1683-health
-            // "fox". Never a stat comparable.
-            var raceLink = view.RaceLink(npc);
-            if (raceLink is null || raceLink.IsNull) continue;
-            if (raceLink.FormKey == StackData.FoxRace) continue;
+            // "fox", and also the placeholder the CK leaves on any actor whose Traits are templated.
+            // Never a stat comparable.
+            if (view.RaceKey(npc) is not { } raceKey) continue;
+            if (StackData.IsPlaceholderRace(raceKey)) continue;
 
             // A donor whose stat block resolves to nothing (a broken template chain, or an LVLN root)
             // has no numbers to give.
@@ -58,8 +58,8 @@ public sealed class DonorIndex
 
             var donor = new Donor(npc, level, fromStack);
 
-            if (!_byRace.TryGetValue(raceLink.FormKey, out var list))
-                _byRace[raceLink.FormKey] = list = new List<Donor>();
+            if (!_byRace.TryGetValue(raceKey, out var list))
+                _byRace[raceKey] = list = new List<Donor>();
             list.Add(donor);
             ActorCount++;
 

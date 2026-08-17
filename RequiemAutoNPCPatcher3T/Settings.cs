@@ -88,6 +88,15 @@ public class Settings
              "own dead bytes.")]
     public bool PatchCreatures { get; set; } = true;
 
+    [SettingName("De-level children")]
+    [Tooltip("A child gets a fixed level and NOTHING else - no pools, no skill line, no perks, no " +
+             "abilities, no class, no combat style. Detected from the RACE's own Child flag, not from " +
+             "the EditorID.\n\nTurn this off to leave child actors completely untouched.")]
+    public bool DeLevelChildren { get; set; } = true;
+
+    [SettingName("Level to give children")]
+    public int ChildLevel { get; set; } = 1;
+
     [SettingName("Patch non-combatants")]
     [Tooltip("Off (default): an actor whose STRONG evidence is entirely civilian - a merchant class, no " +
              "weapon, a flat skill line, no combat style, no perks - is left alone and logged.\n\n" +
